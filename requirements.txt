@@ -1,0 +1,45 @@
+# =============================================================================
+# YOLOv8 QAT dependencies
+# =============================================================================
+
+# ── Core ─────────────────────────────────────────────────────────────────────
+# ultralytics >= 8.4 is REQUIRED, not merely recommended. Its checkpoint writer
+# moves ModelOpt quantization out of the pickle into a sidecar entry (runtime-
+# generated quantized classes cannot be pickled) and restores it on load, and
+# its fuse() rescales each weight quantizer's range when folding BatchNorm.
+# On older releases, saving a quantized model fails or silently loses the
+# quantization.
+ultralytics>=8.4.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# ── Quantization backend ─────────────────────────────────────────────────────
+# NVIDIA TensorRT Model Optimizer. This replaces `pytorch-quantization`, which
+# is in maintenance mode, ships Linux/x86_64 CUDA wheels only, and cannot
+# quantize a pickled YOLO .pt at all (its monkey-patch of torch.nn has no
+# effect on unpickled modules — measured: 64 Conv2d layers, 0 patched).
+nvidia-modelopt>=0.19.0
+
+# modelopt imports this at package-import time but does not always pull it in,
+# so it is listed explicitly rather than left to fail on first import.
+huggingface_hub
+
+# ── ONNX ─────────────────────────────────────────────────────────────────────
+onnx>=1.14.0
+onnxruntime>=1.15.0
+# NOTE: onnx-simplifier is deliberately absent. Running it over a QAT graph
+# folds the Q/DQ pairs away and leaves you with an FP32 model.
+
+# ── Config and utilities ─────────────────────────────────────────────────────
+pyyaml>=6.0
+tqdm>=4.65.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+pytest>=7.0.0
+
+# ── TensorRT (install separately) ────────────────────────────────────────────
+# Not pinned here: the build must match the CUDA/TensorRT on the deployment
+# host, and DeepStream ships its own. Install with `pip install tensorrt` or use
+# the DeepStream container's bindings.

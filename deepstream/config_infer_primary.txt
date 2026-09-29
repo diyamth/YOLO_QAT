@@ -1,0 +1,85 @@
+################################################################################
+# nvinfer primary GIE — YOLOv8 QAT INT8 engine
+#
+# The engine is built from a QAT ONNX whose Q/DQ nodes carry the ranges learned
+# during training, so no INT8 calibration file is needed here. An
+# `int8-calib-file` entry would be the PTQ path and is deliberately absent.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUIRED BEFORE THIS WILL DETECT ANYTHING: a custom bbox parser
+# ─────────────────────────────────────────────────────────────────────────────
+# YOLOv8 outputs a single raw tensor of shape (batch, 4 + num_classes, anchors)
+# — for COCO, (1, 84, 8400). It is NOT decoded and NOT NMS'd. None of nvinfer's
+# built-in parsers understand that layout, so without the parser below the
+# pipeline runs clean and produces zero detections.
+#
+# Build one (e.g. from github.com/marcoslucianops/DeepStream-Yolo):
+#     git clone https://github.com/marcoslucianops/DeepStream-Yolo
+#     cd DeepStream-Yolo
+#     CUDA_VER=12.2 make -C nvdsinfer_custom_impl_Yolo
+# then point custom-lib-path at the resulting .so and set parse-bbox-func-name
+# to the function it exports.
+################################################################################
+
+[property]
+gpu-id=0
+
+# 1/255 — matches the normalisation used in training
+net-scale-factor=0.0039215686274509803
+
+# 0=RGB, 1=BGR, 2=GRAY. YOLOv8 trains on RGB.
+# (This is the colour-format key. `network-input-order` below is layout, not
+# colour — the two are easy to confuse.)
+model-color-format=0
+
+# 0=NCHW, 1=NHWC. The exported ONNX is NCHW.
+network-input-order=0
+
+# ─── Model ───────────────────────────────────────────────────────────────────
+# Prebuilt engine (recommended — no rebuild at startup).
+model-engine-file=../runs/qat_model.engine
+
+# Alternative: let nvinfer build the engine from the ONNX on first run. It will
+# write the engine next to the ONNX. Slower to start, and nvinfer's builder
+# options are more limited than src/build_trt_engine.py.
+#onnx-file=../runs/qat_model.onnx
+
+labelfile-path=labels.txt
+
+# ─── Inference ───────────────────────────────────────────────────────────────
+batch-size=1
+
+# 0=FP32, 1=INT8, 2=FP16. INT8 to match the QAT engine.
+network-mode=1
+
+# MUST match the model. 80 for COCO; change it with your dataset and keep
+# labels.txt the same length.
+num-detected-classes=80
+
+# Must match export.onnx_path's input resolution (model.input_size).
+infer-dims=3;640;640
+
+# Letterbox rather than stretch, matching how the model was trained and
+# calibrated. A different aspect-ratio policy at inference shifts the input
+# distribution away from the calibrated quantizer ranges.
+maintain-aspect-ratio=1
+symmetric-padding=1
+
+# 1=primary (full frame), 2=secondary (on tracker ROIs)
+process-mode=1
+gie-unique-id=1
+
+# ─── Output parsing ──────────────────────────────────────────────────────────
+output-blob-names=output0
+
+# 4 = the parser does its own clustering/NMS (what YOLO parsers do).
+cluster-mode=4
+
+# Uncomment once the parser .so is built — see the header.
+#parse-bbox-func-name=NvDsInferParseYolo
+#custom-lib-path=nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so
+
+[class-attrs-all]
+pre-cluster-threshold=0.25
+nms-iou-threshold=0.45
+topk=300

@@ -1,0 +1,100 @@
+# =============================================================================
+# YOLOv8 Quantization-Aware Training configuration
+# =============================================================================
+
+seed: 0
+
+# --- Model -------------------------------------------------------------------
+model:
+  weights: "weights/yolov8s.pt"     # Pretrained FP32 checkpoint to fine-tune
+  input_size: [640, 640]            # [height, width]; must be a multiple of 32
+
+# --- Dataset -----------------------------------------------------------------
+dataset:
+  data_yaml: "dataset/data.yaml"    # YOLO data.yaml with train:/val:/nc:/names:
+  val_split: "val"                  # Split used for every mAP measurement
+
+# --- Quantization ------------------------------------------------------------
+quantization:
+  # Quantizer-name patterns left in FP32 (fnmatch syntax).
+  # The DFL conv holds fixed arange weights implementing a softmax-weighted
+  # sum. INT8 there costs accuracy and saves nothing, so it stays out.
+  # Add layers here that `--sensitivity` flags as expensive.
+  skip_patterns:
+    - "*dfl*"
+  top_k: 10                         # Layers to report from sensitivity analysis
+
+# --- Calibration (seeds the quantizer ranges) --------------------------------
+calibration:
+  num_batches: 128                  # Batches to observe; 100-500 is plenty
+  batch_size: 8
+  split: "train"                    # Calibrate on training images...
+  shuffle: true                     # ...sampled across the set, not the first N
+  # Range estimator:
+  #   max        - absolute maximum. Fast, the NVIDIA default, good baseline.
+  #   percentile - clips outliers so the remaining range gets finer steps.
+  #   entropy    - minimises KL divergence against the FP32 distribution.
+  #   mse        - minimises squared error.
+  algorithm: "max"
+  percentile: 99.99                 # Only used when algorithm is "percentile"
+
+# --- QAT fine-tuning ---------------------------------------------------------
+qat_training:
+  epochs: 15                        # 10-30 is typical for a QAT fine-tune
+  batch_size: 16
+  val_batch_size: 16
+  learning_rate: 1.0e-5             # SMALL. This is a fine-tune of converged
+                                    # weights; a large LR destroys them faster
+                                    # than quantization noise is ever learned.
+  final_lr_ratio: 0.01              # Cosine floor, as a fraction of lr0
+  weight_decay: 0.0005
+  warmup_epochs: 1
+  optimizer: "AdamW"
+  cosine_lr: true
+  workers: 8
+  device: "0"                       # GPU id, or "cpu"
+
+  # Freeze BatchNorm running statistics from this epoch onward. Late in QAT the
+  # quantizer ranges are fixed while BN stats keep drifting, so the statistics
+  # folded into the exported weights are ones the quantized weights never
+  # trained against. Set to null to disable.
+  freeze_bn_epoch: 10
+
+  # QAT starts from converged weights, so heavy augmentation is counterproductive:
+  # it drives activations into ranges calibration never saw, and the fixed
+  # quantizer ranges then clip data the model depends on.
+  reduce_augmentation: true
+  aug_scale: 0.3
+  aug_translate: 0.1
+  aug_fliplr: 0.5
+
+  plots: true
+  # Any ultralytics train argument can be forced here, e.g.
+  # extra_args: {patience: 50, close_mosaic: 0}
+  extra_args: {}
+
+# --- ONNX export -------------------------------------------------------------
+export:
+  onnx_path: "runs/qat_model.onnx"
+  opset_version: 13                 # Q/DQ export is specified against opset 13
+  dynamic_batch: false              # Static shapes give TensorRT more to work with
+  fuse: true                        # Fold BN into conv (quantizer ranges rescale)
+  export_on_cpu: true               # Trace on CPU: identical graph, no GPU memory
+  # NOTE: never run onnx-simplifier on the output. It folds Q/DQ pairs away and
+  # silently leaves you with an FP32 graph.
+
+# --- TensorRT engine ---------------------------------------------------------
+tensorrt:
+  engine_path: "runs/qat_model.engine"
+  int8: true                        # Use the Q/DQ scales from the ONNX
+  fp16: true                        # Fallback precision for non-INT8 layers
+  workspace_mb: 4096
+  min_batch: 1
+  opt_batch: 1                      # Match DeepStream's batch-size
+  max_batch: 1
+  verbose: false
+
+# --- Output ------------------------------------------------------------------
+output:
+  run_dir: "runs"
+  run_name: "qat"

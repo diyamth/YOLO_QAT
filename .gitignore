@@ -1,0 +1,46 @@
+# ── Virtual environment ──────────────────────────────────────────────
+# yolo_qat/ is a 5GB Linux/CUDA venv containing files >100MB.
+# GitHub rejects those outright — recreate it with requirements.txt instead.
+yolo_qat/
+venv/
+.venv/
+env/
+
+# ── Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ── QAT / training outputs ───────────────────────────────────────────
+runs/*
+!runs/.gitkeep
+*.log
+*.engine
+*.onnx
+*.trt
+*.cache
+qat_best.pt
+qat_last.pt
+
+# ── Datasets ─────────────────────────────────────────────────────────
+dataset/
+datasets/
+*.tar
+*.zip
+
+# ── OS / editor ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ── Orphaned git dir from the old hawkvision-ai remote (safe to delete) ──
+.git.disconnected-backup/
+
+# ── Test artifacts ──
+.pytest_cache/
